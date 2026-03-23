@@ -1,0 +1,59 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-history-server
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-history-server
+  template:
+    metadata:
+      labels:
+        app: spark-history-server
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: history-server
+          image: apache/spark:3.5.3
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+          ports:
+            - containerPort: 18080
+              name: history-ui
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+            - name: SPARK_HOME
+              value: /opt/spark
+            - name: SPARK_HISTORY_OPTS
+              value: "-Dspark.history.fs.logDirectory=hdfs:///spark-logs -Dspark.history.ui.port=18080"
+            - name: PATH
+              value: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-history-server
+  namespace: hadoop
+spec:
+  type: NodePort
+  selector:
+    app: spark-history-server
+  ports:
+    - name: history-ui
+      port: 18080
+      targetPort: 18080
+      nodePort: 30180

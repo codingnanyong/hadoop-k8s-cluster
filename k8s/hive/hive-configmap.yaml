@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hive-config
+  namespace: hadoop
+data:
+  # Base Hive settings only. javax.jdo (JDBC URL / user / password) is merged at Pod start
+  # from Secret `hive-metastore-db` by the `render-hive-site` initContainer — do not put DB secrets here.
+  hive-site-base.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+    <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+    <configuration>
+
+      <!-- Metastore service -->
+      <property>
+        <name>hive.metastore.uris</name>
+        <value>thrift://hive-metastore:9083</value>
+      </property>
+
+      <!-- HDFS warehouse -->
+      <property>
+        <name>hive.metastore.warehouse.dir</name>
+        <value>hdfs:///warehouse</value>
+      </property>
+
+      <!-- Schema verification -->
+      <property>
+        <name>hive.metastore.schema.verification</name>
+        <value>false</value>
+      </property>
+
+      <!-- ACID disabled (lab-style setup) -->
+      <property>
+        <name>hive.support.concurrency</name>
+        <value>false</value>
+      </property>
+
+      <!-- HDFS default FS -->
+      <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://hdfs-namenode:8020</value>
+      </property>
+
+    </configuration>

@@ -1,0 +1,41 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hdfs-datanode-worker-01
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hdfs-datanode-worker-01
+  template:
+    metadata:
+      labels:
+        app: hdfs-datanode-worker-01
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: datanode
+          image: apache/hadoop:3.4.3
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              hdfs datanode
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: hdfs-data
+              mountPath: /data/hdfs
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: hdfs-data
+          persistentVolumeClaim:
+            claimName: hdfs-datanode-pvc-worker-01
+

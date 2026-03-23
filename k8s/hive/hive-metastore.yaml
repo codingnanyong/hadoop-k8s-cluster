@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hive-metastore
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hive-metastore
+  template:
+    metadata:
+      labels:
+        app: hive-metastore
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      initContainers:
+        # Merge JDBC settings from Secret into hive-site.xml (no DB secrets in ConfigMap)
+        - name: render-hive-site
+          image: python:3.12-alpine
+          command: ["python3", "-c"]
+          args:
+            - |
+              import xml.etree.ElementTree as ET
+              from pathlib import Path
+              secrets = Path("/secrets")
+              url = secrets.joinpath("connection-url").read_text(encoding="utf-8").strip()
+              user = secrets.joinpath("username").read_text(encoding="utf-8").strip()
+              pw = secrets.joinpath("password").read_text(encoding="utf-8").strip()
+              tree = ET.parse("/config/hive-site-base.xml")
+              root = tree.getroot()
+              def add_prop(name, value):
+                  p = ET.SubElement(root, "property")
+                  ET.SubElement(p, "name").text = name
+                  ET.SubElement(p, "value").text = value
+              add_prop("javax.jdo.option.ConnectionURL", url)
+              add_prop("javax.jdo.option.ConnectionDriverName", "org.postgresql.Driver")
+              add_prop("javax.jdo.option.ConnectionUserName", user)
+              add_prop("javax.jdo.option.ConnectionPassword", pw)
+              tree.write(
+                  "/work/hive-site.xml",
+                  encoding="UTF-8",
+                  xml_declaration=True,
+              )
+          volumeMounts:
+            - name: hive-config-base
+              mountPath: /config
+              readOnly: true
+            - name: hive-metastore-db
+              mountPath: /secrets
+              readOnly: true
+            - name: hive-site-generated
+              mountPath: /work
+
+        # PostgreSQL JDBC driver (alpine has wget)
+        - name: download-jdbc
+          image: alpine:3.19
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Downloading PostgreSQL JDBC driver..."
+              wget -q -O /jdbc/postgresql-jdbc.jar \
+                https://jdbc.postgresql.org/download/postgresql-42.7.3.jar
+              echo "Downloaded: $(ls -lh /jdbc/)"
+          volumeMounts:
+            - name: jdbc-driver
+              mountPath: /jdbc
+
+      containers:
+        - name: hive-metastore
+          image: apache/hive:4.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              if /opt/hive/bin/schematool -dbType postgres -info > /dev/null 2>&1; then
+                echo "Schema already exists, skipping initSchema."
+              else
+                echo "Initializing Hive schema..."
+                /opt/hive/bin/schematool -dbType postgres -initSchema
+              fi
+              exec /opt/hive/bin/hive --service metastore
+          ports:
+            - containerPort: 9083
+              name: thrift
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+            - name: HIVE_CONF_DIR
+              value: /opt/hive/conf
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: hive-site-generated
+              mountPath: /opt/hive/conf/hive-site.xml
+              subPath: hive-site.xml
+            - name: jdbc-driver
+              mountPath: /opt/hive/lib/postgresql-jdbc.jar
+              subPath: postgresql-jdbc.jar
+          readinessProbe:
+            tcpSocket:
+              port: 9083
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            failureThreshold: 6
+
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: hive-config-base
+          configMap:
+            name: hive-config
+            items:
+              - key: hive-site-base.xml
+                path: hive-site-base.xml
+        - name: hive-metastore-db
+          secret:
+            secretName: hive-metastore-db
+        - name: hive-site-generated
+          emptyDir: {}
+        - name: jdbc-driver
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hive-metastore
+  namespace: hadoop
+spec:
+  selector:
+    app: hive-metastore
+  ports:
+    - port: 9083
+      targetPort: 9083
+      name: thrift

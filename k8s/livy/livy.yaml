@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livy-server
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: livy-server
+  template:
+    metadata:
+      labels:
+        app: livy-server
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      securityContext:
+        runAsUser: 0
+      # Livy 바이너리 다운로드 (최초 1회, hostPath에 캐시)
+      initContainers:
+        - name: livy-setup
+          image: alpine:3.19
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ -f /opt/livy/bin/livy-server ]; then
+                echo "Livy already cached at hostPath, skipping download"
+                exit 0
+              fi
+              echo "=== Livy 0.7.0 다운로드 시작 (약 1~2분 소요) ==="
+              apk add --no-cache wget unzip 2>/dev/null
+              wget -q \
+                "https://archive.apache.org/dist/incubator/livy/0.7.0-incubating/apache-livy-0.7.0-incubating-bin.zip" \
+                -O /tmp/livy.zip
+              unzip -q /tmp/livy.zip -d /tmp/
+              cp -r /tmp/apache-livy-0.7.0-incubating-bin/* /opt/livy/
+              chmod +x /opt/livy/bin/livy-server
+              rm -f /tmp/livy.zip
+              echo "=== Livy 설치 완료 ==="
+          volumeMounts:
+            - name: livy-home
+              mountPath: /opt/livy
+
+      containers:
+        - name: livy-server
+          image: apache/spark:3.5.3
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -c
+            - |
+              set -e
+              mkdir -p /opt/livy/logs /opt/livy/run
+
+              # ConfigMap에서 설정 복사
+              cp /etc/livy-config/livy.conf /opt/livy/conf/livy.conf
+              cp /etc/livy-config/livy-env.sh /opt/livy/conf/livy-env.sh
+              chmod +x /opt/livy/conf/livy-env.sh
+
+              echo "=== Livy 서버 시작 (port 8998) ==="
+              exec /opt/livy/bin/livy-server
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+            - name: YARN_CONF_DIR
+              value: /etc/hadoop
+            - name: SPARK_HOME
+              value: /opt/spark
+            - name: LIVY_HOME
+              value: /opt/livy
+            - name: JAVA_HOME
+              value: /opt/java/openjdk
+            - name: PATH
+              value: /opt/livy/bin:/opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          ports:
+            - containerPort: 8998
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8998
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8998
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: spark-config
+              mountPath: /opt/spark/conf/spark-defaults.conf
+              subPath: spark-defaults.conf
+            - name: hive-config
+              mountPath: /opt/spark/conf/hive-site.xml
+              subPath: hive-site.xml
+            - name: livy-home
+              mountPath: /opt/livy
+            - name: livy-config
+              mountPath: /etc/livy-config
+
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: spark-config
+          configMap:
+            name: spark-config
+        - name: hive-config
+          configMap:
+            name: hive-config
+            items:
+              - key: hive-site-base.xml
+                path: hive-site.xml
+        # hostPath: 재시작 후에도 Livy 바이너리 유지 (재다운로드 방지)
+        - name: livy-home
+          hostPath:
+            path: /var/lib/hadoop-k8s/livy-cache
+            type: DirectoryOrCreate
+        - name: livy-config
+          configMap:
+            name: livy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livy-server
+  namespace: hadoop
+spec:
+  type: NodePort
+  selector:
+    app: livy-server
+  ports:
+    - port: 8998
+      targetPort: 8998
+      nodePort: 30998
+      name: http

@@ -1,0 +1,62 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hbase-regionserver-worker-02
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hbase-regionserver-worker-02
+  template:
+    metadata:
+      labels:
+        app: hbase-regionserver-worker-02
+        role: hbase-regionserver
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-02
+      containers:
+        - name: hbase-regionserver
+          image: harisekhon/hbase:2.1
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              export HBASE_CONF_DIR=/hbase/conf
+              export HBASE_OPTS="-Dhbase.regionserver.hostname=${MY_POD_IP}"
+              exec /hbase/bin/hbase regionserver start
+          ports:
+            - containerPort: 16020
+              name: rs-rpc
+            - containerPort: 16030
+              name: rs-ui
+          env:
+            - name: HBASE_CONF_DIR
+              value: /hbase/conf
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: hbase-config
+              mountPath: /hbase/conf/hbase-site.xml
+              subPath: hbase-site.xml
+          readinessProbe:
+            httpGet:
+              path: /rs-status
+              port: 16030
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 5
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+      volumes:
+        - name: hbase-config
+          configMap:
+            name: hbase-config

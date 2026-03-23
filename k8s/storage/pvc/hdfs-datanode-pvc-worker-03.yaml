@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hdfs-datanode-pvc-worker-03
+  namespace: hadoop
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-hdfs
+  resources:
+    requests:
+      storage: 500Gi

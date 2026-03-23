@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-thriftserver
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-thriftserver
+  template:
+    metadata:
+      labels:
+        app: spark-thriftserver
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: thriftserver
+          image: apache/spark:3.5.3
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              /opt/spark/bin/spark-submit \
+                --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \
+                --master yarn \
+                --deploy-mode client \
+                --conf spark.driver.host=${MY_POD_IP} \
+                --conf spark.driver.bindAddress=0.0.0.0 \
+                --conf spark.executor.memory=1g \
+                --conf spark.executor.cores=1 \
+                --conf spark.dynamicAllocation.enabled=false \
+                --conf spark.executor.instances=2 \
+                --hiveconf hive.server2.thrift.port=10000 \
+                --hiveconf hive.server2.thrift.bind.host=0.0.0.0 \
+                spark-internal
+          ports:
+            - containerPort: 10000
+              name: thrift
+            - containerPort: 4040
+              name: spark-ui
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+            - name: YARN_CONF_DIR
+              value: /etc/hadoop
+            - name: SPARK_HOME
+              value: /opt/spark
+            - name: PATH
+              value: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: spark-config
+              mountPath: /opt/spark/conf/spark-defaults.conf
+              subPath: spark-defaults.conf
+            - name: hive-config
+              mountPath: /opt/spark/conf/hive-site.xml
+              subPath: hive-site.xml
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: spark-config
+          configMap:
+            name: spark-config
+        - name: hive-config
+          configMap:
+            name: hive-config
+            items:
+              - key: hive-site-base.xml
+                path: hive-site.xml

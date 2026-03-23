@@ -1,0 +1,94 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hbase-master
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hbase-master
+  template:
+    metadata:
+      labels:
+        app: hbase-master
+    spec:
+      # Pod hostname을 고정 → HBase가 ZooKeeper에 'hbase-master'로 등록
+      # Kubernetes Service 'hbase-master'와 이름이 같아 DNS 해석 가능
+      hostname: hbase-master
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: hbase-master
+          image: harisekhon/hbase:2.1
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              export HBASE_CONF_DIR=/hbase/conf
+              exec /hbase/bin/hbase master start
+          ports:
+            - containerPort: 16000
+              name: master-rpc
+            - containerPort: 16010
+              name: master-ui
+          env:
+            - name: HBASE_CONF_DIR
+              value: /hbase/conf
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: hbase-config
+              mountPath: /hbase/conf/hbase-site.xml
+              subPath: hbase-site.xml
+          readinessProbe:
+            httpGet:
+              path: /master-status
+              port: 16010
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 5
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+      volumes:
+        - name: hbase-config
+          configMap:
+            name: hbase-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hbase-master
+  namespace: hadoop
+spec:
+  selector:
+    app: hbase-master
+  ports:
+    - port: 16000
+      targetPort: 16000
+      name: master-rpc
+    - port: 16010
+      targetPort: 16010
+      name: master-ui
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hbase-master-ui
+  namespace: hadoop
+spec:
+  type: NodePort
+  selector:
+    app: hbase-master
+  ports:
+    - port: 16010
+      targetPort: 16010
+      nodePort: 30610
+      name: master-ui
