@@ -1,0 +1,36 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yarn-resourcemanager
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yarn-resourcemanager
+  template:
+    metadata:
+      labels:
+        app: yarn-resourcemanager
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: resourcemanager
+          image: apache/hadoop:3.4.3
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              yarn resourcemanager
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+

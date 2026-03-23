@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hbase-config
+  namespace: hadoop
+data:
+  hbase-site.xml: |
+    <?xml version="1.0"?>
+    <configuration>
+
+      <!-- HDFS에 HBase 데이터 저장 -->
+      <property>
+        <name>hbase.rootdir</name>
+        <value>hdfs://hdfs-namenode:8020/hbase</value>
+      </property>
+
+      <!-- ZooKeeper 연결 -->
+      <property>
+        <name>hbase.zookeeper.quorum</name>
+        <value>zookeeper</value>
+      </property>
+      <property>
+        <name>hbase.zookeeper.property.clientPort</name>
+        <value>2181</value>
+      </property>
+
+      <!-- 분산 모드 -->
+      <property>
+        <name>hbase.cluster.distributed</name>
+        <value>true</value>
+      </property>
+
+      <!-- HDFS 스트림 검증 비활성화 (개발 환경) -->
+      <property>
+        <name>hbase.unsafe.stream.capability.enforce</name>
+        <value>false</value>
+      </property>
+
+      <!-- WAL provider (asyncfs → filesystem으로 변경, 호환성) -->
+      <property>
+        <name>hbase.wal.provider</name>
+        <value>filesystem</value>
+      </property>
+
+      <!-- RegionServer 메모리 설정 -->
+      <property>
+        <name>hbase.regionserver.global.memstore.size</name>
+        <value>0.4</value>
+      </property>
+
+      <!-- Master Web UI 포트 -->
+      <property>
+        <name>hbase.master.info.port</name>
+        <value>16010</value>
+      </property>
+
+      <!-- RegionServer Web UI 포트 -->
+      <property>
+        <name>hbase.regionserver.info.port</name>
+        <value>16030</value>
+      </property>
+
+    </configuration>

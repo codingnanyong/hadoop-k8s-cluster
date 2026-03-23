@@ -1,0 +1,51 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yarn-nodemanager-worker-02
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yarn-nodemanager-worker-02
+  template:
+    metadata:
+      labels:
+        app: yarn-nodemanager-worker-02
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-02
+      containers:
+        - name: nodemanager
+          image: apache/hadoop:3.4.3
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+          command: ["bash", "-c"]
+          args:
+            - |
+              cat /etc/hosts | sed "/^${MY_POD_IP}[[:space:]]/i ${MY_POD_IP}\t${MY_POD_IP}" > /tmp/hosts.new && cat /tmp/hosts.new > /etc/hosts
+              mkdir -p /tmp/hadoop-conf
+              for f in /etc/hadoop/*.xml; do cat "$f" > "/tmp/hadoop-conf/$(basename $f)"; done
+              sed -i "s|[[:space:]]*</configuration>|<property><name>yarn.nodemanager.hostname</name><value>${MY_POD_IP}</value></property><property><name>yarn.nodemanager.address</name><value>${MY_POD_IP}:8041</value></property><property><name>yarn.nodemanager.webapp.address</name><value>${MY_POD_IP}:8042</value></property><property><name>yarn.nodemanager.localizer.address</name><value>${MY_POD_IP}:8040</value></property></configuration>|" /tmp/hadoop-conf/yarn-site.xml
+              export HADOOP_CONF_DIR=/tmp/hadoop-conf
+              yarn nodemanager
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: yarn-local
+              mountPath: /var/lib/hadoop-yarn
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: yarn-local
+          emptyDir: {}
+
