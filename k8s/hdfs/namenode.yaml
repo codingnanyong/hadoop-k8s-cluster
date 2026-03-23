@@ -1,0 +1,43 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hdfs-namenode
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hdfs-namenode
+  template:
+    metadata:
+      labels:
+        app: hdfs-namenode
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: namenode
+          image: apache/hadoop:3.4.3
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c"]
+          args:
+            - |
+              if [ ! -d "/data/namenode/current" ]; then
+                hdfs namenode -format -force -nonInteractive
+              fi
+              hdfs namenode
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: namenode-data
+              mountPath: /data/namenode
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: namenode-data
+          persistentVolumeClaim:
+            claimName: hdfs-namenode-pvc

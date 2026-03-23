@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-client
+  namespace: hadoop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-client
+  template:
+    metadata:
+      labels:
+        app: spark-client
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-01
+      containers:
+        - name: spark-client
+          image: apache/spark:3.5.3
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-c", "sleep infinity"]
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop
+            - name: YARN_CONF_DIR
+              value: /etc/hadoop
+            - name: SPARK_HOME
+              value: /opt/spark
+            - name: PATH
+              value: /opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /etc/hadoop
+            - name: spark-config
+              mountPath: /opt/spark/conf/spark-defaults.conf
+              subPath: spark-defaults.conf
+            - name: hive-config
+              mountPath: /opt/spark/conf/hive-site.xml
+              subPath: hive-site.xml
+      volumes:
+        - name: hadoop-config
+          configMap:
+            name: hadoop-config
+        - name: spark-config
+          configMap:
+            name: spark-config
+        - name: hive-config
+          configMap:
+            name: hive-config
+            items:
+              - key: hive-site-base.xml
+                path: hive-site.xml
